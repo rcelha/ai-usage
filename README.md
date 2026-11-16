@@ -36,11 +36,13 @@ Build a standalone executable with `cargo build --release`, then run `./target/r
 
 | Tool        | Default location                                        | Records                                                                                    |
 | ----------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| OpenCode    | `$XDG_DATA_HOME/opencode`, or `~/.local/share/opencode` | `opencode.db`; legacy `storage/session` and `storage/message` JSON when no database exists |
+| OpenCode V2 | `$XDG_DATA_HOME/opencode`, or `~/.local/share/opencode` | `opencode.db`: `session_v2` and `session_message` tables |
 | Claude Code | `$CLAUDE_CONFIG_DIR`, or `~/.claude`                    | `projects/**/*.jsonl`, including `subagents/` logs                                         |
 | Codex       | `$CODEX_HOME`, or `~/.codex`                            | `sessions/`, `archived_sessions/`, latest `state_*.sqlite`, and title indices              |
 
 Override these with `--opencode-dir`, `--claude-dir`, and `--codex-dir`. The application works offline, opens SQLite databases read-only, and does not read authentication files. Missing installations are skipped. Unreadable files, malformed JSONL records, and provider errors produce warnings while other records remain available. Warnings appear on stderr for the table and in the JSON report's `warnings` array.
+
+Only OpenCode V2 is supported. Old `session`/`message` tables left behind after migration and V1 JSON storage are not read.
 
 ## Counting rules
 
