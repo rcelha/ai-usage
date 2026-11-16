@@ -119,42 +119,162 @@ fn codex_counts_deltas_once_and_excludes_inherited_fork_usage() {
     assert!((s.usage.cost_usd.unwrap() - 0.000482).abs() < 1e-10);
 }
 
+fn opencode_v2_database(root: &Path) -> Connection {
+    fs::create_dir_all(root).unwrap();
+    let db = Connection::open(root.join("opencode.db")).unwrap();
+    db.execute_batch(
+        "CREATE TABLE session_v2 (id TEXT PRIMARY KEY,title TEXT,parent_id TEXT,time_updated INTEGER);
+         CREATE TABLE session_message (id TEXT PRIMARY KEY,session_id TEXT,type TEXT,data TEXT,time_updated INTEGER);",
+    )
+    .unwrap();
+    db
+}
+
 #[test]
-fn opencode_database_reports_cost_and_nested_descendants() {
+fn opencode_v2_reads_current_sessions_messages_and_nested_agents() {
     let (_tmp, p) = setup();
-    fs::create_dir_all(&p.opencode).unwrap();
-    let db = Connection::open(p.opencode.join("opencode.db")).unwrap();
-    db.execute_batch("CREATE TABLE session (id TEXT,title TEXT,parent_id TEXT,time_updated INTEGER); CREATE TABLE message (session_id TEXT,data TEXT,time_updated INTEGER);
-        INSERT INTO session VALUES ('a','OpenCode root',NULL,1000),('b','child','a',2000),('c','nested','b',3000);").unwrap();
-    for id in ["a", "b", "c"] {
-        db.execute("INSERT INTO message VALUES (?1,?2,4000)",rusqlite::params![id,json!({"role":"assistant","modelID":"unknown-model","cost":0.5,"tokens":{"input":20,"output":3,"reasoning":2,"cache":{"read":10,"write":5}}}).to_string()]).unwrap();
+    let db = opencode_v2_database(&p.opencode);
+    db.execute_batch(
+        "INSERT INTO session_v2 VALUES
+            ('root','Current OpenCode session',NULL,1000),
+            ('child','Agent','root',2000),
+            ('nested','Nested agent','child',3000),
+            ('untitled',NULL,NULL,5000);",
+    )
+    .unwrap();
+    for id in ["root", "child", "nested"] {
+        // V2 stores the role in a column and the model ID in a nested object.
+        db.execute(
+            "INSERT INTO session_message VALUES (?1,?1,'assistant',?2,4000)",
+            rusqlite::params![
+                id,
+                json!({"model":{"providerID":"litellm","id":"unknown-model"},"cost":0.5,"tokens":{"input":20,"output":3,"reasoning":2,"cache":{"read":10,"write":5}},"time":{"created":3500,"completed":4000}}).to_string()
+            ],
+        )
+        .unwrap();
     }
+    db.execute(
+        "INSERT INTO session_message VALUES ('user','root','user',?1,6000)",
+        [json!({"text":"Not a model request"}).to_string()],
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO session_message VALUES ('streaming','root','assistant',?1,7000)",
+        [json!({"model":{"id":"unknown-model"},"time":{"created":7000}}).to_string()],
+    )
+    .unwrap();
     drop(db);
     let before = fs::read(p.opencode.join("opencode.db")).unwrap();
-    let report = collect(&p, &[], &prices());
+
+    let report = collect(&p, &[Provider::Opencode], &prices());
     assert!(report.warnings.is_empty(), "{:?}", report.warnings);
-    assert_eq!(report.sessions.len(), 1);
+    assert_eq!(report.sessions.len(), 2);
     let s = &report.sessions[0];
+    assert_eq!(s.id, "root");
+    assert_eq!(s.title, "Current OpenCode session");
     assert_eq!(s.subagents, 2);
+    assert_eq!(s.usage.requests, 3);
     assert_eq!(s.usage.cost_usd, Some(1.5));
+    assert_eq!(s.usage.tokens.input, 60);
     assert_eq!(s.usage.tokens.output, 15);
+    assert_eq!(s.usage.tokens.cache_read, 30);
     assert_eq!(s.usage.tokens.cache_write, 15);
     assert!(!s.usage.estimated);
+    assert_eq!(s.last_used.unwrap().timestamp_millis(), 7000);
+    assert_eq!(report.sessions[1].title, "untitled");
+    assert_eq!(report.sessions[1].usage.requests, 0);
     assert_eq!(fs::read(p.opencode.join("opencode.db")).unwrap(), before);
 }
 
 #[test]
-fn legacy_opencode_and_unknown_prices_do_not_silently_become_zero() {
+fn opencode_v2_ignores_stale_v1_tables() {
     let (_tmp, p) = setup();
-    write_json(
-        &p.opencode.join("storage/session/project/old.json"),
-        json!({"id":"old","title":"Legacy","time":{"updated":1000}}),
-    );
-    write_json(
-        &p.opencode.join("storage/message/old/m.json"),
-        json!({"role":"assistant","tokens":{"input":10,"output":1},"modelID":"unlisted"}),
-    );
+    let db = opencode_v2_database(&p.opencode);
+    db.execute_batch(
+        "CREATE TABLE session (id TEXT,title TEXT,parent_id TEXT,time_updated INTEGER);
+         CREATE TABLE message (session_id TEXT,data TEXT,time_updated INTEGER);
+         INSERT INTO session VALUES ('migrated','Stale title',NULL,1000),('v1-only','Old session',NULL,2000);
+         INSERT INTO session_v2 VALUES ('migrated','Updated title',NULL,3000),('new','New session',NULL,4000);",
+    )
+    .unwrap();
+    for id in ["migrated", "v1-only"] {
+        db.execute(
+            "INSERT INTO message VALUES (?1,?2,2000)",
+            rusqlite::params![
+                id,
+                json!({"role":"assistant","cost":1.0,"tokens":{"input":10,"output":1}}).to_string()
+            ],
+        )
+        .unwrap();
+    }
+    db.execute(
+        "INSERT INTO session_message VALUES ('current','migrated','assistant',?1,3000)",
+        [json!({"cost":2.0,"tokens":{"input":20,"output":2}}).to_string()],
+    )
+    .unwrap();
+    drop(db);
+
+    let report = collect(&p, &[Provider::Opencode], &prices());
+    assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+    assert_eq!(report.sessions.len(), 2);
+    assert!(!report.sessions.iter().any(|s| s.id == "v1-only"));
+    let migrated = report.sessions.iter().find(|s| s.id == "migrated").unwrap();
+    assert_eq!(migrated.title, "Updated title");
+    assert_eq!(migrated.usage.requests, 1);
+    assert_eq!(migrated.usage.cost_usd, Some(2.0));
+    assert_eq!(report.totals.requests, 1);
+    assert_eq!(report.totals.tokens.input, 20);
+    assert_eq!(report.totals.cost_usd, Some(2.0));
+}
+
+#[test]
+fn opencode_v2_estimates_nested_models_and_preserves_explicit_zero_costs() {
+    let (_tmp, p) = setup();
+    let db = opencode_v2_database(&p.opencode);
+    db.execute_batch("INSERT INTO session_v2 VALUES ('root','Costs',NULL,1000);")
+        .unwrap();
+    for (id, message) in [
+        (
+            "estimated",
+            json!({"model":{"providerID":"openai","id":"gpt-6.1-sol"},"tokens":{"input":100,"output":10,"reasoning":5,"cache":{"read":50,"write":0}}}),
+        ),
+        (
+            "free",
+            json!({"model":{"id":"unlisted"},"cost":0.0,"tokens":{"input":10}}),
+        ),
+    ] {
+        db.execute(
+            "INSERT INTO session_message VALUES (?1,'root','assistant',?2,2000)",
+            rusqlite::params![id, message.to_string()],
+        )
+        .unwrap();
+    }
+    drop(db);
+
+    let report = collect(&p, &[Provider::Opencode], &prices());
+    assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+    assert_eq!(report.sessions.len(), 1);
+    assert_eq!(report.totals.requests, 2);
+    assert!(report.totals.estimated);
+    assert_eq!(report.totals.unpriced_requests, 0);
+    let expected = (100.0 * 2.0 + 15.0 * 10.0 + 50.0 * 0.1) / 1_000_000.0;
+    assert!((report.totals.cost_usd.unwrap() - expected).abs() < 1e-10);
+}
+
+#[test]
+fn opencode_v2_unknown_prices_do_not_silently_become_zero() {
+    let (_tmp, p) = setup();
+    let db = opencode_v2_database(&p.opencode);
+    db.execute_batch("INSERT INTO session_v2 VALUES ('root','Unknown model',NULL,1000);")
+        .unwrap();
+    db.execute(
+        "INSERT INTO session_message VALUES ('m','root','assistant',?1,2000)",
+        [json!({"tokens":{"input":10,"output":1},"model":{"id":"unlisted"}}).to_string()],
+    )
+    .unwrap();
+    drop(db);
     let report = collect(&p, &[], &prices());
+    assert!(report.warnings.is_empty(), "{:?}", report.warnings);
     assert_eq!(report.sessions.len(), 1);
     assert_eq!(report.totals.cost_usd, None);
     assert_eq!(report.totals.unpriced_requests, 1);
@@ -249,14 +369,15 @@ fn cli_sorts_filters_and_limits_without_changing_totals() {
 #[test]
 fn provider_totals_include_hidden_sessions_and_agents_and_respect_filters() {
     let (_tmp, p) = setup();
-    write_json(
-        &p.opencode.join("storage/session/project/old.json"),
-        json!({"id":"old","title":"Old session","time":{"updated":1000}}),
-    );
-    write_json(
-        &p.opencode.join("storage/message/old/m.json"),
-        json!({"role":"assistant","tokens":{"input":10,"output":1},"modelID":"unlisted"}),
-    );
+    let db = opencode_v2_database(&p.opencode);
+    db.execute_batch("INSERT INTO session_v2 VALUES ('old','Old session',NULL,1000);")
+        .unwrap();
+    db.execute(
+        "INSERT INTO session_message VALUES ('m','old','assistant',?1,1000)",
+        [json!({"tokens":{"input":10,"output":1},"model":{"id":"unlisted"}}).to_string()],
+    )
+    .unwrap();
+    drop(db);
     jsonl(
         &p.claude.join("projects/p/main.jsonl"),
         &[claude_message("a", 10, 5)],

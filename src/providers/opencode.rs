@@ -1,7 +1,7 @@
 use crate::{
     Provider, Session, Tokens,
     pricing::Pricing,
-    util::{files, n, open_db, read_json, s, timestamp},
+    util::{n, open_db, s, timestamp},
 };
 use anyhow::Result;
 use serde_json::Value;
@@ -13,20 +13,20 @@ pub(super) fn load(
     warnings: &mut Vec<String>,
 ) -> Result<Vec<Session>> {
     let db = root.join("opencode.db");
-    if db.exists() {
-        return database(&db, pricing, warnings);
+    if !db.exists() {
+        return Ok(Vec::new());
     }
-    legacy(root, pricing, warnings)
+    database(&db, pricing, warnings)
 }
 
 fn database(path: &Path, pricing: &Pricing, warnings: &mut Vec<String>) -> Result<Vec<Session>> {
     let db = open_db(path)?;
     let mut sessions = HashMap::new();
-    let mut stmt = db.prepare("SELECT id, title, parent_id, time_updated FROM session")?;
+    let mut stmt = db.prepare("SELECT id, title, parent_id, time_updated FROM session_v2")?;
     let rows = stmt.query_map([], |row| {
         Ok((
             row.get::<_, String>(0)?,
-            row.get::<_, String>(1)?,
+            row.get::<_, Option<String>>(1)?,
             row.get::<_, Option<String>>(2)?,
             row.get::<_, i64>(3)?,
         ))
@@ -34,13 +34,23 @@ fn database(path: &Path, pricing: &Pricing, warnings: &mut Vec<String>) -> Resul
     for row in rows {
         let (id, title, parent, updated) = row?;
         let mut session = Session::new(id.clone(), Provider::Opencode);
-        session.title = title;
+        session.title = title.filter(|t| !t.trim().is_empty()).unwrap_or(id.clone());
         session.parent = parent;
         session.touch(timestamp(&Value::from(updated)));
         sessions.insert(id, session);
     }
     // JSON extraction avoids loading user prompts and tool output from a large database.
-    let mut stmt = db.prepare("SELECT session_id, json_object('role',json_extract(data,'$.role'),'modelID',json_extract(data,'$.modelID'),'cost',json_extract(data,'$.cost'),'tokens',json_extract(data,'$.tokens'),'time',json_extract(data,'$.time')), time_updated FROM message WHERE json_extract(data,'$.role') = 'assistant'")?;
+    // V2 stores the message type separately and the model ID under model.id.
+    // Read only V2 tables: migrated V1 tables can still exist but are stale.
+    let mut stmt = db.prepare(
+        "SELECT session_id,
+                json_object('model',json_extract(data,'$.model.id'),
+                            'cost',json_extract(data,'$.cost'),
+                            'tokens',json_extract(data,'$.tokens'),
+                            'time',json_extract(data,'$.time')),
+                time_updated
+         FROM session_message WHERE type = 'assistant'",
+    )?;
     let rows = stmt.query_map([], |row| {
         Ok((
             row.get::<_, String>(0)?,
@@ -64,7 +74,7 @@ fn database(path: &Path, pricing: &Pricing, warnings: &mut Vec<String>) -> Resul
 }
 
 fn message_usage(session: &mut Session, message: &Value, pricing: &Pricing) {
-    if s(message, "role") != Some("assistant") || !message["tokens"].is_object() {
+    if !message["tokens"].is_object() {
         return;
     }
     let t = &message["tokens"];
@@ -74,7 +84,7 @@ fn message_usage(session: &mut Session, message: &Value, pricing: &Pricing) {
         cache_read: n(&t["cache"], "read"),
         cache_write: n(&t["cache"], "write"),
     };
-    let model = s(message, "modelID").unwrap_or("unknown");
+    let model = s(message, "model").unwrap_or("unknown");
     let reported = message["cost"]
         .as_f64()
         .filter(|n| n.is_finite() && *n >= 0.0);
@@ -87,38 +97,4 @@ fn message_usage(session: &mut Session, message: &Value, pricing: &Pricing) {
     session.touch(
         timestamp(&message["time"]["completed"]).or_else(|| timestamp(&message["time"]["created"])),
     );
-}
-
-fn legacy(root: &Path, pricing: &Pricing, warnings: &mut Vec<String>) -> Result<Vec<Session>> {
-    let storage = root.join("storage");
-    let mut sessions = HashMap::new();
-    for path in files(&storage.join("session"), "json", warnings) {
-        match read_json(&path) {
-            Ok(v) => {
-                let Some(id) = s(&v, "id") else {
-                    continue;
-                };
-                let mut session = Session::new(id.to_owned(), Provider::Opencode);
-                session.title = s(&v, "title").unwrap_or(id).to_owned();
-                session.parent = s(&v, "parentID").map(str::to_owned);
-                session.touch(timestamp(&v["time"]["updated"]));
-                sessions.insert(id.to_owned(), session);
-            }
-            Err(e) => warnings.push(format!("{}: {e:#}", path.display())),
-        }
-    }
-    for path in files(&storage.join("message"), "json", warnings) {
-        match read_json(&path) {
-            Ok(v) => {
-                let id = s(&v, "sessionID")
-                    .map(str::to_owned)
-                    .or_else(|| path.parent()?.file_name()?.to_str().map(str::to_owned));
-                if let Some(session) = id.and_then(|id| sessions.get_mut(&id)) {
-                    message_usage(session, &v, pricing);
-                }
-            }
-            Err(e) => warnings.push(format!("{}: {e:#}", path.display())),
-        }
-    }
-    Ok(sessions.into_values().collect())
 }

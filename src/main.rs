@@ -27,7 +27,7 @@ struct Args {
     /// Sessions last used on or after this UTC date (YYYY-MM-DD)
     #[arg(long)]
     since: Option<NaiveDate>,
-    /// OpenCode data directory (contains opencode.db or storage/)
+    /// OpenCode V2 data directory (contains opencode.db)
     #[arg(long)]
     opencode_dir: Option<PathBuf>,
     /// Claude config directory (contains projects/)
