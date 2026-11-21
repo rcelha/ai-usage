@@ -23,6 +23,7 @@ pub struct Tier {
     pub rate: Rate,
 }
 
+#[derive(Debug, Clone)]
 pub struct Pricing {
     rates: BTreeMap<String, Rate>,
 }

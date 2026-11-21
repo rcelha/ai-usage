@@ -4,7 +4,11 @@ use std::{
     process::ExitCode,
 };
 
-use ai_usage::{Paths, Provider, Report, collect, display, pricing::Pricing};
+use ai_usage::{
+    Paths, Provider, collect, display,
+    pricing::Pricing,
+    server::{self, ServerConfig},
+};
 use anyhow::{Context, Result};
 use chrono::NaiveDate;
 use clap::Parser;
@@ -21,6 +25,17 @@ struct Args {
     /// Emit a JSON report with full titles, session IDs, totals, and warnings
     #[arg(long)]
     json: bool,
+    /// Serve a real-time web report on [HOST:]PORT [default: 127.0.0.1:8080]
+    #[arg(
+        long,
+        num_args = 0..=1,
+        default_missing_value = "127.0.0.1:8080",
+        value_name = "ADDR_OR_PORT"
+    )]
+    serve: Option<String>,
+    /// Port for the real-time web server (implies --serve)
+    #[arg(long, value_name = "PORT")]
+    port: Option<u16>,
     /// Show only the N most recently used sessions (totals still include all matches)
     #[arg(short, long)]
     limit: Option<usize>,
@@ -57,18 +72,23 @@ fn run() -> Result<()> {
         paths.codex = p;
     }
     let pricing = Pricing::load(args.pricing.as_deref())?;
+    if args.serve.is_some() || args.port.is_some() {
+        let addr = server::resolve_bind_addr(args.serve.as_deref(), args.port)?;
+        return server::run_blocking(
+            addr,
+            ServerConfig {
+                paths,
+                pricing,
+                pricing_path: args.pricing,
+                providers: args.provider,
+                since: args.since,
+                limit: args.limit,
+                title_width: args.title_width,
+            },
+        );
+    }
     let mut report = collect(&paths, &args.provider, &pricing);
-    if let Some(date) = args.since {
-        report
-            .sessions
-            .retain(|s| s.last_used.is_some_and(|t| t.date_naive() >= date));
-    }
-    report.totals = Report::totals(&report.sessions);
-    report.provider_totals = Report::provider_totals(&report.sessions);
-    let matched = report.sessions.len();
-    if let Some(limit) = args.limit {
-        report.sessions.truncate(limit);
-    }
+    let matched = report.apply_filters(args.since, args.limit);
     let mut out = io::BufWriter::new(io::stdout().lock());
     if args.json {
         serde_json::to_writer_pretty(&mut out, &report)?;

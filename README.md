@@ -28,9 +28,17 @@ cargo run --release -- --provider codex --codex-dir /path/to/codex-home
 
 # Longer titles in the table
 cargo run --release -- --title-width 70
+
+# Serve a real-time web report on http://127.0.0.1:8080 (auto-updates via SSE)
+cargo run --release -- --serve
+
+# Serve on a custom port or bind address with initial filters
+cargo run --release -- --serve 3000 --since 2026-11-01 --limit 20
 ```
 
 Build a standalone executable with `cargo build --release`, then run `./target/release/ai-usage`. Run `--help` for all options. The final table shows totals per provider: sessions, cost, tokens, cache usage, requests, and subagents. `--limit` limits displayed rows; overall and provider totals include **all matching sessions**. JSON includes the same breakdown in `provider_totals`.
+
+With `--serve [HOST:]PORT` (or `--port PORT`), `ai-usage` starts a local web server (default `127.0.0.1:8080`), watches the data directories for file and SQLite changes with a fallback poll, and streams live updates to the browser via Server-Sent Events (`/api/events` and `/api/report`) so costs, tokens, and session rows update automatically without refreshing.
 
 ## Data sources
 
