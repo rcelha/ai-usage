@@ -1,0 +1,1513 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ai-usage — Live Session Usage &amp; Cost Report</title>
+  <style>
+    :root {
+      --bg: #0b0f17;
+      --bg-elevated: #111827;
+      --bg-card: #151e2e;
+      --bg-hover: #1e293b;
+      --bg-input: #0f172a;
+      --border: #263248;
+      --border-subtle: #1e293b;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --accent: #38bdf8;
+      --accent-soft: rgba(56, 189, 248, 0.14);
+      --green: #34d399;
+      --green-soft: rgba(52, 211, 153, 0.15);
+      --green-flash: rgba(52, 211, 153, 0.24);
+      --amber: #fbbf24;
+      --amber-soft: rgba(251, 191, 36, 0.14);
+      --red: #f87171;
+      --red-soft: rgba(248, 113, 113, 0.14);
+      --opencode-fg: #a78bfa;
+      --opencode-bg: rgba(167, 139, 250, 0.14);
+      --claude-fg: #fb923c;
+      --claude-bg: rgba(251, 146, 60, 0.14);
+      --codex-fg: #38bdf8;
+      --codex-bg: rgba(56, 189, 248, 0.14);
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+      --shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+    }
+
+    html[data-theme="light"] {
+      --bg: #f8fafc;
+      --bg-elevated: #ffffff;
+      --bg-card: #ffffff;
+      --bg-hover: #f1f5f9;
+      --bg-input: #ffffff;
+      --border: #cbd5e1;
+      --border-subtle: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #475569;
+      --text-dim: #64748b;
+      --accent: #0284c7;
+      --accent-soft: rgba(2, 132, 199, 0.1);
+      --green: #059669;
+      --green-soft: rgba(5, 150, 105, 0.12);
+      --green-flash: rgba(16, 185, 129, 0.22);
+      --amber: #d97706;
+      --amber-soft: rgba(217, 119, 6, 0.12);
+      --red: #dc2626;
+      --red-soft: rgba(220, 38, 38, 0.1);
+      --opencode-fg: #6d28d9;
+      --opencode-bg: rgba(109, 40, 217, 0.1);
+      --claude-fg: #c2410c;
+      --claude-bg: rgba(194, 65, 12, 0.1);
+      --codex-fg: #0369a1;
+      --codex-bg: rgba(3, 105, 161, 0.1);
+      --shadow: 0 2px 10px rgba(15, 23, 42, 0.06);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 14px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container {
+      max-width: 1520px;
+      margin: 0 auto;
+      padding: 20px 24px 48px;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 18px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-family: var(--mono);
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .brand .subtitle {
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    .header-right {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 12px;
+      border-radius: 999px;
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.7);
+      animation: pulse-dot 2s infinite;
+    }
+
+    .status-badge[data-status="paused"] .status-dot {
+      background: var(--amber);
+      animation: none;
+    }
+
+    .status-badge[data-status="disconnected"] .status-dot {
+      background: var(--red);
+      animation: none;
+    }
+
+    @keyframes pulse-dot {
+      0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.6); }
+      70% { box-shadow: 0 0 0 7px rgba(52, 211, 153, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+    }
+
+    .meta-time {
+      color: var(--text-muted);
+      font-family: var(--mono);
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    button, .btn {
+      appearance: none;
+      background: var(--bg-card);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 11px;
+      font-size: 12px;
+      font-weight: 500;
+      font-family: var(--sans);
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+
+    button:hover {
+      background: var(--bg-hover);
+      border-color: var(--accent);
+    }
+
+    button.active {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* Watch Delta Banner */
+    .watch-banner {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 14px;
+      margin-bottom: 16px;
+      border-radius: 8px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      font-family: var(--mono);
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .watch-banner.has-activity {
+      border-color: var(--green);
+      background: var(--green-soft);
+    }
+
+    .watch-items {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .watch-label {
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .watch-banner.has-activity .watch-label {
+      color: var(--green);
+    }
+
+    .watch-metric strong {
+      color: var(--text);
+    }
+
+    /* KPI Grid */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .kpi-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      box-shadow: var(--shadow);
+      transition: border-color 0.3s, background-color 0.3s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .kpi-card.flash-up {
+      animation: flash-card 1.4s ease-out;
+    }
+
+    @keyframes flash-card {
+      0% {
+        background-color: var(--green-flash);
+        border-color: var(--green);
+      }
+      100% {
+        background-color: var(--bg-card);
+        border-color: var(--border);
+      }
+    }
+
+    .kpi-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 6px;
+    }
+
+    .kpi-value {
+      font-family: var(--mono);
+      font-size: 24px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+    }
+
+    .kpi-sub {
+      margin-top: 6px;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-family: var(--mono);
+      font-variant-numeric: tabular-nums;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    .delta-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: var(--green);
+      background: var(--green-soft);
+    }
+
+    /* Controls Bar */
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 16px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      margin-bottom: 16px;
+    }
+
+    .controls-group {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .control-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    input[type="text"],
+    input[type="search"],
+    input[type="date"],
+    input[type="number"] {
+      background: var(--bg-input);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-family: var(--mono);
+      outline: none;
+    }
+
+    input[type="search"] {
+      width: 220px;
+    }
+
+    input[type="number"] {
+      width: 76px;
+    }
+
+    input:focus {
+      border-color: var(--accent);
+    }
+
+    .provider-pills {
+      display: inline-flex;
+      gap: 4px;
+    }
+
+    /* Banners for missing prices & warnings */
+    .alert-box {
+      padding: 10px 14px;
+      border-radius: 8px;
+      margin-bottom: 14px;
+      font-family: var(--mono);
+      font-size: 12px;
+      border: 1px solid var(--amber);
+      background: var(--amber-soft);
+      color: var(--text);
+    }
+
+    .alert-box.error-box {
+      border-color: var(--red);
+      background: var(--red-soft);
+    }
+
+    .alert-box ul {
+      margin: 4px 0 0 18px;
+      padding: 0;
+    }
+
+    /* Tables */
+    .section-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      margin: 20px 0 10px;
+    }
+
+    .section-header h2 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .section-header .section-meta {
+      color: var(--text-muted);
+      font-family: var(--mono);
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .table-wrap {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow-x: auto;
+      box-shadow: var(--shadow);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-variant-numeric: tabular-nums;
+    }
+
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-subtle);
+      white-space: nowrap;
+    }
+
+    th {
+      background: var(--bg-elevated);
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      user-select: none;
+    }
+
+    th.sortable {
+      cursor: pointer;
+      transition: color 0.15s, background 0.15s;
+    }
+
+    th.sortable:hover {
+      color: var(--text);
+      background: var(--bg-hover);
+    }
+
+    th.sorted {
+      color: var(--accent);
+    }
+
+    th.num, td.num {
+      text-align: right;
+      font-family: var(--mono);
+    }
+
+    tbody tr:last-child td {
+      border-bottom: none;
+    }
+
+    tbody tr:hover {
+      background: var(--bg-hover);
+    }
+
+    tbody tr.row-updated {
+      animation: flash-row 1.8s ease-out;
+    }
+
+    @keyframes flash-row {
+      0% { background-color: var(--green-flash); }
+      100% { background-color: transparent; }
+    }
+
+    .title-cell {
+      max-width: 440px;
+      white-space: normal;
+      word-break: break-word;
+    }
+
+    .title-main {
+      font-weight: 500;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .title-id {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 2px;
+    }
+
+    .provider-tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .provider-tag[data-provider="opencode"] {
+      color: var(--opencode-fg);
+      background: var(--opencode-bg);
+    }
+
+    .provider-tag[data-provider="claude"] {
+      color: var(--claude-fg);
+      background: var(--claude-bg);
+    }
+
+    .provider-tag[data-provider="codex"] {
+      color: var(--codex-fg);
+      background: var(--codex-bg);
+    }
+
+    .cell-delta {
+      display: block;
+      font-size: 10px;
+      color: var(--green);
+      font-weight: 600;
+      line-height: 1.2;
+    }
+
+    .empty-state {
+      padding: 36px 20px;
+      text-align: center;
+      color: var(--text-muted);
+      font-family: var(--mono);
+    }
+
+    .footnote {
+      margin-top: 14px;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-family: var(--mono);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="brand">
+        <h1>ai-usage</h1>
+        <span class="subtitle">Real-time local session usage &amp; cost report</span>
+      </div>
+      <div class="header-right">
+        <div id="status-badge" class="status-badge" data-status="connecting">
+          <span class="status-dot"></span>
+          <span id="status-text">CONNECTING…</span>
+        </div>
+        <span id="last-updated" class="meta-time">Waiting for data…</span>
+        <button id="pause-btn" type="button" title="Pause or resume real-time UI updates">Pause</button>
+        <button id="theme-btn" type="button" title="Toggle dark/light theme">Light mode</button>
+      </div>
+    </header>
+
+    <div id="watch-banner" class="watch-banner">
+      <div class="watch-items">
+        <span class="watch-label">Live session watch (since page opened):</span>
+        <span class="watch-metric">Cost <strong id="watch-cost">+$0.0000</strong></span>
+        <span class="watch-metric">Requests <strong id="watch-requests">+0</strong></span>
+        <span class="watch-metric">Input <strong id="watch-input">+0</strong></span>
+        <span class="watch-metric">Output <strong id="watch-output">+0</strong></span>
+        <span class="watch-metric">Cache reads <strong id="watch-cache-read">+0</strong></span>
+        <span class="watch-metric">Cache writes <strong id="watch-cache-write">+0</strong></span>
+      </div>
+      <button id="reset-watch-btn" type="button">Reset watch counter</button>
+    </div>
+
+    <section class="kpi-grid" aria-label="Totals for all matching sessions">
+      <div id="kpi-card-cost" class="kpi-card">
+        <div class="kpi-header">
+          <span>Total Cost (USD)</span>
+          <span id="delta-cost" class="delta-pill" hidden></span>
+        </div>
+        <div id="kpi-cost" class="kpi-value">$0.0000</div>
+        <div class="kpi-sub">
+          <span id="kpi-cost-note">All matching sessions</span>
+        </div>
+      </div>
+
+      <div id="kpi-card-requests" class="kpi-card">
+        <div class="kpi-header">
+          <span>Requests</span>
+          <span id="delta-requests" class="delta-pill" hidden></span>
+        </div>
+        <div id="kpi-requests" class="kpi-value">0</div>
+        <div class="kpi-sub">
+          <span id="kpi-sessions-sub">0 sessions · 0 subagents</span>
+        </div>
+      </div>
+
+      <div id="kpi-card-input" class="kpi-card">
+        <div class="kpi-header">
+          <span>Tokens In</span>
+          <span id="delta-input" class="delta-pill" hidden></span>
+        </div>
+        <div id="kpi-input" class="kpi-value">0</div>
+        <div class="kpi-sub"><span>Excludes cache tokens</span></div>
+      </div>
+
+      <div id="kpi-card-output" class="kpi-card">
+        <div class="kpi-header">
+          <span>Tokens Out</span>
+          <span id="delta-output" class="delta-pill" hidden></span>
+        </div>
+        <div id="kpi-output" class="kpi-value">0</div>
+        <div class="kpi-sub"><span>Includes reasoning tokens</span></div>
+      </div>
+
+      <div id="kpi-card-cache-read" class="kpi-card">
+        <div class="kpi-header">
+          <span>Cache Reads</span>
+          <span id="delta-cache-read" class="delta-pill" hidden></span>
+        </div>
+        <div id="kpi-cache-read" class="kpi-value">0</div>
+        <div class="kpi-sub"><span>Cached prompt tokens</span></div>
+      </div>
+
+      <div id="kpi-card-cache-write" class="kpi-card">
+        <div class="kpi-header">
+          <span>Cache Writes</span>
+          <span id="delta-cache-write" class="delta-pill" hidden></span>
+        </div>
+        <div id="kpi-cache-write" class="kpi-value">0</div>
+        <div class="kpi-sub"><span>Cache creation tokens</span></div>
+      </div>
+    </section>
+
+    <section class="controls" aria-label="Interactive report filters">
+      <div class="controls-group">
+        <label class="control-item">
+          <span>Search</span>
+          <input id="filter-search" type="search" placeholder="Title or session ID…" autocomplete="off" />
+        </label>
+
+        <div class="control-item">
+          <span>Providers</span>
+          <div class="provider-pills" id="provider-pills">
+            <button type="button" data-provider="opencode" class="active">opencode</button>
+            <button type="button" data-provider="claude" class="active">claude</button>
+            <button type="button" data-provider="codex" class="active">codex</button>
+          </div>
+        </div>
+
+        <label class="control-item">
+          <span>Since (UTC)</span>
+          <input id="filter-since" type="date" />
+        </label>
+
+        <label class="control-item">
+          <span>Limit</span>
+          <input id="filter-limit" type="number" min="0" placeholder="All" />
+        </label>
+
+        <label class="control-item">
+          <input id="filter-truncate" type="checkbox" checked />
+          <span>Truncate titles</span>
+        </label>
+      </div>
+
+      <div class="controls-group">
+        <button id="reset-filters-btn" type="button">Reset filters</button>
+      </div>
+    </section>
+
+    <div id="unpriced-banner" class="alert-box" hidden></div>
+    <div id="warnings-banner" class="alert-box error-box" hidden></div>
+
+    <div class="section-header">
+      <h2>Sessions</h2>
+      <span id="sessions-summary" class="section-meta">Showing 0 of 0 sessions</span>
+    </div>
+
+    <div class="table-wrap">
+      <table id="sessions-table">
+        <thead>
+          <tr>
+            <th class="sortable" data-sort="title">Session title <span class="sort-ind"></span></th>
+            <th class="sortable" data-sort="provider">Provider <span class="sort-ind"></span></th>
+            <th class="sortable sorted" data-sort="last_used">Last used (UTC) <span class="sort-ind">▼</span></th>
+            <th class="sortable num" data-sort="cost">Cost (USD) <span class="sort-ind"></span></th>
+            <th class="sortable num" data-sort="input">Tokens in <span class="sort-ind"></span></th>
+            <th class="sortable num" data-sort="output">Tokens out <span class="sort-ind"></span></th>
+            <th class="sortable num" data-sort="cache_read">Cache reads <span class="sort-ind"></span></th>
+            <th class="sortable num" data-sort="cache_write">Cache writes <span class="sort-ind"></span></th>
+            <th class="sortable num" data-sort="requests">Requests <span class="sort-ind"></span></th>
+            <th class="sortable num" data-sort="subagents">Subagents <span class="sort-ind"></span></th>
+          </tr>
+        </thead>
+        <tbody id="sessions-tbody">
+          <tr>
+            <td colspan="10" class="empty-state">Loading session usage…</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="footnote">
+      ~ estimated at model list prices; &gt;=…? partial cost; input excludes cache tokens. Subagents included in parent totals.
+    </p>
+
+    <div class="section-header">
+      <h2>Totals per provider (all matching sessions)</h2>
+    </div>
+
+    <div class="table-wrap">
+      <table id="providers-table">
+        <thead>
+          <tr>
+            <th>Provider</th>
+            <th class="num">Sessions</th>
+            <th class="num">Cost (USD)</th>
+            <th class="num">Tokens in</th>
+            <th class="num">Tokens out</th>
+            <th class="num">Cache reads</th>
+            <th class="num">Cache writes</th>
+            <th class="num">Requests</th>
+            <th class="num">Subagents</th>
+          </tr>
+        </thead>
+        <tbody id="providers-tbody">
+          <tr>
+            <td colspan="9" class="empty-state">No matching provider usage.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const PROVIDERS = ["opencode", "claude", "codex"];
+
+      let initializedDefaults = false;
+      let serverDefaults = {
+        providers: [],
+        since: null,
+        limit: null,
+        title_width: 40,
+      };
+
+      let filters = {
+        search: "",
+        providers: new Set(PROVIDERS),
+        since: "",
+        limit: null,
+        truncate: true,
+        sortCol: "last_used",
+        sortAsc: false,
+      };
+
+      let paused = false;
+      let pendingPayload = null;
+      let currentPayload = null;
+
+      // Previous session & totals snapshots for computing real-time diffs
+      let prevSessions = new Map();
+      let prevTotals = null;
+      let baselineTotals = null;
+      let recentRowDiffs = new Map(); // key -> { until, isNew, dCost, dReq, dIn, dOut, dCR, dCW, dSub }
+
+      // DOM elements
+      const statusBadge = document.getElementById("status-badge");
+      const statusText = document.getElementById("status-text");
+      const lastUpdatedEl = document.getElementById("last-updated");
+      const pauseBtn = document.getElementById("pause-btn");
+      const themeBtn = document.getElementById("theme-btn");
+      const resetWatchBtn = document.getElementById("reset-watch-btn");
+      const watchBanner = document.getElementById("watch-banner");
+
+      const searchInput = document.getElementById("filter-search");
+      const sinceInput = document.getElementById("filter-since");
+      const limitInput = document.getElementById("filter-limit");
+      const truncateInput = document.getElementById("filter-truncate");
+      const providerBtns = Array.from(document.querySelectorAll("#provider-pills button"));
+      const resetFiltersBtn = document.getElementById("reset-filters-btn");
+
+      const sessionsTbody = document.getElementById("sessions-tbody");
+      const providersTbody = document.getElementById("providers-tbody");
+      const sessionsSummary = document.getElementById("sessions-summary");
+      const unpricedBanner = document.getElementById("unpriced-banner");
+      const warningsBanner = document.getElementById("warnings-banner");
+
+      function formatNumber(n) {
+        return Number(n || 0).toLocaleString("en-US");
+      }
+
+      function formatCost(usage) {
+        if (usage.cost_usd !== null && usage.cost_usd !== undefined) {
+          return (usage.estimated ? "~" : "") + "$" + Number(usage.cost_usd).toFixed(4);
+        }
+        if ((usage.known_cost_usd || 0) > 0) {
+          return ">=$" + Number(usage.known_cost_usd).toFixed(4) + "?";
+        }
+        return "unknown";
+      }
+
+      function formatTimestamp(iso) {
+        if (!iso) return "unknown";
+        const d = new Date(iso);
+        if (isNaN(d.getTime())) return "unknown";
+        const yyyy = d.getUTCFullYear();
+        const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+        const dd = String(d.getUTCDate()).padStart(2, "0");
+        const hh = String(d.getUTCHours()).padStart(2, "0");
+        const min = String(d.getUTCMinutes()).padStart(2, "0");
+        return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+      }
+
+      function sanitizeTitle(raw) {
+        return String(raw || "").replace(/[\x00-\x1F\x7F]/g, " ");
+      }
+
+      function truncateText(str, maxChars) {
+        const chars = Array.from(str);
+        if (chars.length <= maxChars) return str;
+        return chars.slice(0, Math.max(0, maxChars - 1)).join("") + "…";
+      }
+
+      function emptyUsage() {
+        return {
+          input: 0,
+          output: 0,
+          cache_read: 0,
+          cache_write: 0,
+          requests: 0,
+          known_cost_usd: 0,
+          cost_usd: 0,
+          estimated: false,
+          unpriced_requests: 0,
+          unpriced_models: new Set(),
+        };
+      }
+
+      function mergeUsage(target, other) {
+        target.input += other.input || 0;
+        target.output += other.output || 0;
+        target.cache_read += other.cache_read || 0;
+        target.cache_write += other.cache_write || 0;
+        target.requests += other.requests || 0;
+        target.known_cost_usd += other.known_cost_usd || 0;
+        target.estimated = Boolean(target.estimated || other.estimated);
+        target.unpriced_requests += other.unpriced_requests || 0;
+        if (Array.isArray(other.unpriced_models)) {
+          for (const m of other.unpriced_models) target.unpriced_models.add(m);
+        } else if (other.unpriced_models instanceof Set) {
+          for (const m of other.unpriced_models) target.unpriced_models.add(m);
+        }
+        target.cost_usd = target.unpriced_requests === 0 ? target.known_cost_usd : null;
+      }
+
+      function computeTotals(sessions) {
+        const total = emptyUsage();
+        for (const s of sessions) {
+          mergeUsage(total, s);
+        }
+        return total;
+      }
+
+      function computeProviderTotals(sessions) {
+        const out = [];
+        for (const provider of PROVIDERS) {
+          const matching = sessions.filter((s) => s.provider === provider);
+          if (matching.length === 0) continue;
+          const usage = emptyUsage();
+          let subagents = 0;
+          for (const s of matching) {
+            subagents += s.subagents || 0;
+            mergeUsage(usage, s);
+          }
+          out.push({
+            provider,
+            sessions: matching.length,
+            subagents,
+            usage,
+          });
+        }
+        return out;
+      }
+
+      function applyServerDefaultsToFilters(defaults) {
+        serverDefaults = {
+          providers: Array.isArray(defaults.providers) ? defaults.providers : [],
+          since: defaults.since || null,
+          limit: defaults.limit !== undefined ? defaults.limit : null,
+          title_width: defaults.title_width || 40,
+        };
+        resetFiltersToDefaults();
+      }
+
+      function resetFiltersToDefaults() {
+        filters.search = "";
+        searchInput.value = "";
+
+        if (serverDefaults.providers && serverDefaults.providers.length > 0) {
+          filters.providers = new Set(serverDefaults.providers);
+        } else {
+          filters.providers = new Set(PROVIDERS);
+        }
+        syncProviderButtons();
+
+        filters.since = serverDefaults.since || "";
+        sinceInput.value = filters.since;
+
+        filters.limit = serverDefaults.limit !== null && serverDefaults.limit !== undefined
+          ? Number(serverDefaults.limit)
+          : null;
+        limitInput.value = filters.limit !== null ? String(filters.limit) : "";
+      }
+
+      function syncProviderButtons() {
+        for (const btn of providerBtns) {
+          const p = btn.getAttribute("data-provider");
+          btn.classList.toggle("active", filters.providers.has(p));
+        }
+      }
+
+      function sessionKey(s) {
+        return `${s.provider}:${s.id}`;
+      }
+
+      function recordIncomingDiffs(sessions) {
+        const now = Date.now();
+        const nextMap = new Map();
+        for (const s of sessions) {
+          const key = sessionKey(s);
+          nextMap.set(key, s);
+          if (prevSessions.size > 0) {
+            const old = prevSessions.get(key);
+            if (!old) {
+              recentRowDiffs.set(key, {
+                until: now + 4000,
+                isNew: true,
+                dCost: s.known_cost_usd || 0,
+                dReq: s.requests || 0,
+                dIn: s.input || 0,
+                dOut: s.output || 0,
+                dCR: s.cache_read || 0,
+                dCW: s.cache_write || 0,
+                dSub: s.subagents || 0,
+              });
+            } else {
+              const dCost = (s.known_cost_usd || 0) - (old.known_cost_usd || 0);
+              const dReq = (s.requests || 0) - (old.requests || 0);
+              const dIn = (s.input || 0) - (old.input || 0);
+              const dOut = (s.output || 0) - (old.output || 0);
+              const dCR = (s.cache_read || 0) - (old.cache_read || 0);
+              const dCW = (s.cache_write || 0) - (old.cache_write || 0);
+              const dSub = (s.subagents || 0) - (old.subagents || 0);
+              if (dCost > 1e-12 || dReq > 0 || dIn > 0 || dOut > 0 || dCR > 0 || dCW > 0 || dSub > 0) {
+                recentRowDiffs.set(key, {
+                  until: now + 4000,
+                  isNew: false,
+                  dCost,
+                  dReq,
+                  dIn,
+                  dOut,
+                  dCR,
+                  dCW,
+                  dSub,
+                });
+              }
+            }
+          }
+        }
+        prevSessions = nextMap;
+      }
+
+      function flashCard(cardId, deltaId, deltaText) {
+        const card = document.getElementById(cardId);
+        const badge = document.getElementById(deltaId);
+        if (card) {
+          card.classList.remove("flash-up");
+          void card.offsetWidth;
+          card.classList.add("flash-up");
+        }
+        if (badge) {
+          if (deltaText) {
+            badge.textContent = deltaText;
+            badge.hidden = false;
+          } else {
+            badge.hidden = true;
+          }
+        }
+      }
+
+      function filterAndSortSessions(allSessions) {
+        const q = filters.search.trim().toLowerCase();
+        const sinceDate = filters.since || null;
+
+        const matched = allSessions.filter((s) => {
+          if (!filters.providers.has(s.provider)) return false;
+          if (sinceDate) {
+            if (!s.last_used) return false;
+            const datePart = String(s.last_used).slice(0, 10);
+            if (datePart < sinceDate) return false;
+          }
+          if (q) {
+            const titleMatch = String(s.title || "").toLowerCase().includes(q);
+            const idMatch = String(s.id || "").toLowerCase().includes(q);
+            if (!titleMatch && !idMatch) return false;
+          }
+          return true;
+        });
+
+        const dir = filters.sortAsc ? 1 : -1;
+        matched.sort((a, b) => {
+          let cmp = 0;
+          switch (filters.sortCol) {
+            case "title":
+              cmp = String(a.title || "").localeCompare(String(b.title || ""));
+              break;
+            case "provider":
+              cmp = String(a.provider || "").localeCompare(String(b.provider || ""));
+              break;
+            case "last_used": {
+              const ta = a.last_used ? new Date(a.last_used).getTime() : -Infinity;
+              const tb = b.last_used ? new Date(b.last_used).getTime() : -Infinity;
+              cmp = ta === tb ? 0 : ta < tb ? -1 : 1;
+              break;
+            }
+            case "cost":
+              cmp = (a.known_cost_usd || 0) - (b.known_cost_usd || 0);
+              break;
+            case "input":
+              cmp = (a.input || 0) - (b.input || 0);
+              break;
+            case "output":
+              cmp = (a.output || 0) - (b.output || 0);
+              break;
+            case "cache_read":
+              cmp = (a.cache_read || 0) - (b.cache_read || 0);
+              break;
+            case "cache_write":
+              cmp = (a.cache_write || 0) - (b.cache_write || 0);
+              break;
+            case "requests":
+              cmp = (a.requests || 0) - (b.requests || 0);
+              break;
+            case "subagents":
+              cmp = (a.subagents || 0) - (b.subagents || 0);
+              break;
+          }
+          if (cmp !== 0) return cmp * dir;
+          const pCmp = String(a.provider).localeCompare(String(b.provider));
+          if (pCmp !== 0) return pCmp;
+          return String(a.id).localeCompare(String(b.id));
+        });
+
+        return matched;
+      }
+
+      function render(isLivePush = false) {
+        if (!currentPayload) return;
+
+        const sourceSessions = Array.isArray(currentPayload.all_sessions)
+          ? currentPayload.all_sessions
+          : (currentPayload.sessions || []);
+
+        const matchedSessions = filterAndSortSessions(sourceSessions);
+        const totals = computeTotals(matchedSessions);
+        const providerTotals = computeProviderTotals(matchedSessions);
+
+        const displayedSessions = (filters.limit !== null && filters.limit >= 0)
+          ? matchedSessions.slice(0, filters.limit)
+          : matchedSessions;
+
+        // Baseline watch totals
+        if (!baselineTotals) {
+          baselineTotals = { ...totals };
+        }
+        updateWatchBanner(totals);
+
+        // KPI cards & live deltas
+        document.getElementById("kpi-cost").textContent = formatCost(totals);
+        document.getElementById("kpi-cost-note").textContent =
+          totals.unpriced_requests > 0
+            ? `${formatNumber(totals.unpriced_requests)} unpriced request(s)`
+            : totals.estimated
+            ? "~ Estimated at model list prices"
+            : "Exact recorded cost";
+
+        document.getElementById("kpi-requests").textContent = formatNumber(totals.requests);
+        const totalSubagents = matchedSessions.reduce((acc, s) => acc + (s.subagents || 0), 0);
+        document.getElementById("kpi-sessions-sub").textContent =
+          `${formatNumber(matchedSessions.length)} sessions · ${formatNumber(totalSubagents)} subagents`;
+
+        document.getElementById("kpi-input").textContent = formatNumber(totals.input);
+        document.getElementById("kpi-output").textContent = formatNumber(totals.output);
+        document.getElementById("kpi-cache-read").textContent = formatNumber(totals.cache_read);
+        document.getElementById("kpi-cache-write").textContent = formatNumber(totals.cache_write);
+
+        if (isLivePush && prevTotals) {
+          const dCost = totals.known_cost_usd - prevTotals.known_cost_usd;
+          const dReq = totals.requests - prevTotals.requests;
+          const dIn = totals.input - prevTotals.input;
+          const dOut = totals.output - prevTotals.output;
+          const dCR = totals.cache_read - prevTotals.cache_read;
+          const dCW = totals.cache_write - prevTotals.cache_write;
+
+          if (dCost > 1e-12) flashCard("kpi-card-cost", "delta-cost", `+$${dCost.toFixed(4)}`);
+          if (dReq > 0) flashCard("kpi-card-requests", "delta-requests", `+${formatNumber(dReq)}`);
+          if (dIn > 0) flashCard("kpi-card-input", "delta-input", `+${formatNumber(dIn)}`);
+          if (dOut > 0) flashCard("kpi-card-output", "delta-output", `+${formatNumber(dOut)}`);
+          if (dCR > 0) flashCard("kpi-card-cache-read", "delta-cache-read", `+${formatNumber(dCR)}`);
+          if (dCW > 0) flashCard("kpi-card-cache-write", "delta-cache-write", `+${formatNumber(dCW)}`);
+        }
+        prevTotals = { ...totals };
+
+        // Unpriced models banner
+        const unpricedList = Array.from(totals.unpriced_models).sort();
+        if (unpricedList.length > 0) {
+          unpricedBanner.hidden = false;
+          unpricedBanner.textContent = `Missing prices: ${unpricedList.join(", ")} (override with --pricing)`;
+        } else {
+          unpricedBanner.hidden = true;
+        }
+
+        // Warnings banner
+        const warnings = currentPayload.warnings || [];
+        if (warnings.length > 0) {
+          warningsBanner.hidden = false;
+          warningsBanner.innerHTML = "";
+          const strong = document.createElement("strong");
+          strong.textContent = `Warnings (${warnings.length}):`;
+          warningsBanner.appendChild(strong);
+          const ul = document.createElement("ul");
+          for (const w of warnings) {
+            const li = document.createElement("li");
+            li.textContent = w;
+            ul.appendChild(li);
+          }
+          warningsBanner.appendChild(ul);
+        } else {
+          warningsBanner.hidden = true;
+        }
+
+        // Sessions summary
+        sessionsSummary.textContent =
+          `Showing ${formatNumber(displayedSessions.length)} of ${formatNumber(matchedSessions.length)} matching sessions · Total: ${formatCost(totals)} | ${formatNumber(totals.requests)} requests`;
+
+        // Render Sessions table
+        renderSessionsTable(displayedSessions);
+
+        // Render Provider Totals table
+        renderProviderTotalsTable(providerTotals);
+      }
+
+      function updateWatchBanner(totals) {
+        if (!baselineTotals) return;
+        const dCost = Math.max(0, totals.known_cost_usd - baselineTotals.known_cost_usd);
+        const dReq = Math.max(0, totals.requests - baselineTotals.requests);
+        const dIn = Math.max(0, totals.input - baselineTotals.input);
+        const dOut = Math.max(0, totals.output - baselineTotals.output);
+        const dCR = Math.max(0, totals.cache_read - baselineTotals.cache_read);
+        const dCW = Math.max(0, totals.cache_write - baselineTotals.cache_write);
+
+        document.getElementById("watch-cost").textContent = `+$${dCost.toFixed(4)}`;
+        document.getElementById("watch-requests").textContent = `+${formatNumber(dReq)}`;
+        document.getElementById("watch-input").textContent = `+${formatNumber(dIn)}`;
+        document.getElementById("watch-output").textContent = `+${formatNumber(dOut)}`;
+        document.getElementById("watch-cache-read").textContent = `+${formatNumber(dCR)}`;
+        document.getElementById("watch-cache-write").textContent = `+${formatNumber(dCW)}`;
+
+        const active = dCost > 1e-12 || dReq > 0 || dIn > 0 || dOut > 0 || dCR > 0 || dCW > 0;
+        watchBanner.classList.toggle("has-activity", active);
+      }
+
+      function appendNumberCell(tr, text, deltaText) {
+        const td = document.createElement("td");
+        td.className = "num";
+        td.textContent = text;
+        if (deltaText) {
+          const span = document.createElement("span");
+          span.className = "cell-delta";
+          span.textContent = deltaText;
+          td.appendChild(span);
+        }
+        tr.appendChild(td);
+      }
+
+      function renderSessionsTable(sessions) {
+        sessionsTbody.innerHTML = "";
+        if (sessions.length === 0) {
+          const tr = document.createElement("tr");
+          const td = document.createElement("td");
+          td.colSpan = 10;
+          td.className = "empty-state";
+          td.textContent = "No sessions match the current filters.";
+          tr.appendChild(td);
+          sessionsTbody.appendChild(tr);
+          return;
+        }
+
+        const now = Date.now();
+        const maxWidth = serverDefaults.title_width || 40;
+
+        for (const s of sessions) {
+          const key = sessionKey(s);
+          const diff = recentRowDiffs.get(key);
+          const isRecent = diff && diff.until > now;
+
+          const tr = document.createElement("tr");
+          if (isRecent) {
+            tr.className = "row-updated";
+          }
+
+          // Title cell
+          const titleTd = document.createElement("td");
+          titleTd.className = "title-cell";
+          const cleanTitle = sanitizeTitle(s.title);
+          const displayTitle = filters.truncate
+            ? truncateText(cleanTitle, maxWidth)
+            : cleanTitle;
+          titleTd.title = `${cleanTitle}\nID: ${s.id}`;
+
+          const titleMain = document.createElement("div");
+          titleMain.className = "title-main";
+          const titleSpan = document.createElement("span");
+          titleSpan.textContent = displayTitle;
+          titleMain.appendChild(titleSpan);
+
+          if (isRecent) {
+            const badge = document.createElement("span");
+            badge.className = "delta-pill";
+            badge.textContent = diff.isNew ? "NEW" : "UPDATED";
+            titleMain.appendChild(badge);
+          }
+          titleTd.appendChild(titleMain);
+
+          if (s.title !== s.id) {
+            const idDiv = document.createElement("div");
+            idDiv.className = "title-id";
+            idDiv.textContent = s.id;
+            titleTd.appendChild(idDiv);
+          }
+          tr.appendChild(titleTd);
+
+          // Provider cell
+          const provTd = document.createElement("td");
+          const tag = document.createElement("span");
+          tag.className = "provider-tag";
+          tag.setAttribute("data-provider", s.provider);
+          tag.textContent = s.provider;
+          provTd.appendChild(tag);
+          tr.appendChild(provTd);
+
+          // Last used cell
+          const timeTd = document.createElement("td");
+          timeTd.style.fontFamily = "var(--mono)";
+          timeTd.textContent = formatTimestamp(s.last_used);
+          tr.appendChild(timeTd);
+
+          // Numeric cells with optional live delta
+          appendNumberCell(
+            tr,
+            formatCost(s),
+            isRecent && diff.dCost > 1e-12 ? `+$${diff.dCost.toFixed(4)}` : null
+          );
+          appendNumberCell(
+            tr,
+            formatNumber(s.input),
+            isRecent && diff.dIn > 0 ? `+${formatNumber(diff.dIn)}` : null
+          );
+          appendNumberCell(
+            tr,
+            formatNumber(s.output),
+            isRecent && diff.dOut > 0 ? `+${formatNumber(diff.dOut)}` : null
+          );
+          appendNumberCell(
+            tr,
+            formatNumber(s.cache_read),
+            isRecent && diff.dCR > 0 ? `+${formatNumber(diff.dCR)}` : null
+          );
+          appendNumberCell(
+            tr,
+            formatNumber(s.cache_write),
+            isRecent && diff.dCW > 0 ? `+${formatNumber(diff.dCW)}` : null
+          );
+          appendNumberCell(
+            tr,
+            formatNumber(s.requests),
+            isRecent && diff.dReq > 0 ? `+${formatNumber(diff.dReq)}` : null
+          );
+          appendNumberCell(
+            tr,
+            formatNumber(s.subagents),
+            isRecent && diff.dSub > 0 ? `+${formatNumber(diff.dSub)}` : null
+          );
+
+          sessionsTbody.appendChild(tr);
+        }
+      }
+
+      function renderProviderTotalsTable(providerTotals) {
+        providersTbody.innerHTML = "";
+        if (providerTotals.length === 0) {
+          const tr = document.createElement("tr");
+          const td = document.createElement("td");
+          td.colSpan = 9;
+          td.className = "empty-state";
+          td.textContent = "No matching provider usage.";
+          tr.appendChild(td);
+          providersTbody.appendChild(tr);
+          return;
+        }
+
+        for (const row of providerTotals) {
+          const tr = document.createElement("tr");
+          const provTd = document.createElement("td");
+          const tag = document.createElement("span");
+          tag.className = "provider-tag";
+          tag.setAttribute("data-provider", row.provider);
+          tag.textContent = row.provider;
+          provTd.appendChild(tag);
+          tr.appendChild(provTd);
+
+          appendNumberCell(tr, formatNumber(row.sessions), null);
+          appendNumberCell(tr, formatCost(row.usage), null);
+          appendNumberCell(tr, formatNumber(row.usage.input), null);
+          appendNumberCell(tr, formatNumber(row.usage.output), null);
+          appendNumberCell(tr, formatNumber(row.usage.cache_read), null);
+          appendNumberCell(tr, formatNumber(row.usage.cache_write), null);
+          appendNumberCell(tr, formatNumber(row.usage.requests), null);
+          appendNumberCell(tr, formatNumber(row.subagents), null);
+
+          providersTbody.appendChild(tr);
+        }
+      }
+
+      function handlePayload(payload, isLivePush) {
+        if (!initializedDefaults && payload.defaults) {
+          initializedDefaults = true;
+          applyServerDefaultsToFilters(payload.defaults);
+        }
+
+        const sourceSessions = Array.isArray(payload.all_sessions)
+          ? payload.all_sessions
+          : (payload.sessions || []);
+        recordIncomingDiffs(sourceSessions);
+        currentPayload = payload;
+
+        if (payload.updated_at) {
+          const d = new Date(payload.updated_at);
+          const timeStr = isNaN(d.getTime())
+            ? payload.updated_at
+            : d.toISOString().replace("T", " ").slice(0, 19) + " UTC";
+          lastUpdatedEl.textContent = `Updated ${timeStr} (rev #${payload.revision || 1})`;
+        }
+
+        render(isLivePush);
+      }
+
+      function setConnectionStatus(state, text) {
+        statusBadge.setAttribute("data-status", state);
+        statusText.textContent = text;
+      }
+
+      // Connect via Server-Sent Events
+      function connectSSE() {
+        const es = new EventSource("/api/events");
+
+        es.onopen = () => {
+          if (!paused) {
+            setConnectionStatus("live", "LIVE");
+          }
+        };
+
+        es.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (paused) {
+              pendingPayload = data;
+              setConnectionStatus("paused", "PAUSED (new data ready)");
+              return;
+            }
+            setConnectionStatus("live", "LIVE");
+            const isFirst = currentPayload === null;
+            handlePayload(data, !isFirst);
+          } catch (err) {
+            console.error("Failed to parse SSE payload:", err);
+          }
+        };
+
+        es.onerror = () => {
+          if (!paused) {
+            setConnectionStatus("disconnected", "RECONNECTING…");
+          }
+        };
+      }
+
+      // Interactive Event Listeners
+      searchInput.addEventListener("input", () => {
+        filters.search = searchInput.value;
+        render(false);
+      });
+
+      sinceInput.addEventListener("change", () => {
+        filters.since = sinceInput.value;
+        render(false);
+      });
+
+      limitInput.addEventListener("input", () => {
+        const raw = limitInput.value.trim();
+        filters.limit = raw === "" ? null : Math.max(0, parseInt(raw, 10) || 0);
+        render(false);
+      });
+
+      truncateInput.addEventListener("change", () => {
+        filters.truncate = truncateInput.checked;
+        render(false);
+      });
+
+      for (const btn of providerBtns) {
+        btn.addEventListener("click", () => {
+          const p = btn.getAttribute("data-provider");
+          if (filters.providers.has(p)) {
+            if (filters.providers.size > 1) {
+              filters.providers.delete(p);
+            }
+          } else {
+            filters.providers.add(p);
+          }
+          syncProviderButtons();
+          render(false);
+        });
+      }
+
+      resetFiltersBtn.addEventListener("click", () => {
+        resetFiltersToDefaults();
+        render(false);
+      });
+
+      // Sortable table headers
+      const sortHeaders = Array.from(document.querySelectorAll("#sessions-table th.sortable"));
+      for (const th of sortHeaders) {
+        th.addEventListener("click", () => {
+          const col = th.getAttribute("data-sort");
+          if (filters.sortCol === col) {
+            filters.sortAsc = !filters.sortAsc;
+          } else {
+            filters.sortCol = col;
+            filters.sortAsc = col === "title" || col === "provider";
+          }
+          for (const h of sortHeaders) {
+            const isCurrent = h === th;
+            h.classList.toggle("sorted", isCurrent);
+            const ind = h.querySelector(".sort-ind");
+            if (ind) {
+              ind.textContent = isCurrent ? (filters.sortAsc ? "▲" : "▼") : "";
+            }
+          }
+          render(false);
+        });
+      }
+
+      pauseBtn.addEventListener("click", () => {
+        paused = !paused;
+        pauseBtn.textContent = paused ? "Resume" : "Pause";
+        pauseBtn.classList.toggle("active", paused);
+        if (paused) {
+          setConnectionStatus("paused", "PAUSED");
+        } else {
+          setConnectionStatus("live", "LIVE");
+          if (pendingPayload) {
+            const p = pendingPayload;
+            pendingPayload = null;
+            handlePayload(p, true);
+          }
+        }
+      });
+
+      resetWatchBtn.addEventListener("click", () => {
+        if (prevTotals) {
+          baselineTotals = { ...prevTotals };
+          updateWatchBanner(prevTotals);
+        }
+      });
+
+      themeBtn.addEventListener("click", () => {
+        const root = document.documentElement;
+        const next = root.getAttribute("data-theme") === "light" ? "dark" : "light";
+        root.setAttribute("data-theme", next);
+        themeBtn.textContent = next === "light" ? "Dark mode" : "Light mode";
+      });
+
+      connectSSE();
+    })();
+  </script>
+</body>
+</html>

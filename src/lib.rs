@@ -1,19 +1,20 @@
 pub mod display;
 pub mod pricing;
 mod providers;
+pub mod server;
 mod util;
 
 use anyhow::{Result, anyhow};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use clap::ValueEnum;
 use pricing::Pricing;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
     path::PathBuf,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ValueEnum)]
 #[serde(rename_all = "lowercase")]
 pub enum Provider {
     Opencode,
@@ -73,7 +74,7 @@ impl std::ops::AddAssign for Tokens {
     }
 }
 
-#[derive(Debug, Default, Clone, Serialize)]
+#[derive(Debug, Default, Clone, PartialEq, Serialize)]
 pub struct Usage {
     #[serde(flatten)]
     pub tokens: Tokens,
@@ -122,7 +123,7 @@ impl Usage {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Session {
     pub id: String,
     pub title: String,
@@ -151,7 +152,7 @@ impl Session {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ProviderTotal {
     pub provider: Provider,
     pub sessions: u64,
@@ -160,7 +161,7 @@ pub struct ProviderTotal {
     pub usage: Usage,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Report {
     pub sessions: Vec<Session>,
     pub totals: Usage,
@@ -194,6 +195,20 @@ impl Report {
                 (total.sessions > 0).then_some(total)
             })
             .collect()
+    }
+
+    pub fn apply_filters(&mut self, since: Option<NaiveDate>, limit: Option<usize>) -> usize {
+        if let Some(date) = since {
+            self.sessions
+                .retain(|s| s.last_used.is_some_and(|t| t.date_naive() >= date));
+        }
+        self.totals = Self::totals(&self.sessions);
+        self.provider_totals = Self::provider_totals(&self.sessions);
+        let matched = self.sessions.len();
+        if let Some(limit) = limit {
+            self.sessions.truncate(limit);
+        }
+        matched
     }
 }
 
