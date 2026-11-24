@@ -51,6 +51,9 @@ struct Args {
     /// Codex home directory (contains sessions/ and state_*.sqlite)
     #[arg(long)]
     codex_dir: Option<PathBuf>,
+    /// Show one session's cost/token breakdown per model (ID, ID prefix, or title text)
+    #[arg(short, long, value_name = "ID_OR_TITLE", conflicts_with_all = ["serve", "port", "limit", "since"])]
+    session: Option<String>,
     /// Override per-model USD prices per million tokens using a JSON file
     #[arg(long)]
     pricing: Option<PathBuf>,
@@ -88,6 +91,20 @@ fn run() -> Result<()> {
         );
     }
     let mut report = collect(&paths, &args.provider, &pricing);
+    if let Some(query) = args.session {
+        let session = report.find_session(&query)?;
+        let mut out = io::BufWriter::new(io::stdout().lock());
+        if args.json {
+            serde_json::to_writer_pretty(&mut out, session)?;
+            writeln!(out)?;
+        } else {
+            display::write_session(&mut out, session)?;
+            for warning in &report.warnings {
+                eprintln!("warning: {warning}");
+            }
+        }
+        return out.flush().context("writing session breakdown");
+    }
     let matched = report.apply_filters(args.since, args.limit);
     let mut out = io::BufWriter::new(io::stdout().lock());
     if args.json {

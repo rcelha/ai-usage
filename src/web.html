@@ -489,6 +489,113 @@
       100% { background-color: transparent; }
     }
 
+    tbody tr.session-row {
+      cursor: pointer;
+    }
+
+    tbody tr.session-row:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: -2px;
+    }
+
+    tbody tr.session-row.expanded {
+      background: var(--bg-hover);
+    }
+
+    .chevron {
+      flex: none;
+      width: 10px;
+      color: var(--text-dim);
+      font-size: 11px;
+      transition: transform 0.15s, color 0.15s;
+    }
+
+    tr.expanded .chevron {
+      transform: rotate(90deg);
+      color: var(--accent);
+    }
+
+    tbody tr.detail-row > td {
+      padding: 0;
+      white-space: normal;
+      background: var(--bg-elevated);
+    }
+
+    tbody tr.detail-row:hover {
+      background: transparent;
+    }
+
+    .detail-panel {
+      padding: 12px 16px 14px 30px;
+      border-left: 3px solid var(--accent);
+    }
+
+    .detail-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 6px 14px;
+      margin-bottom: 8px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .detail-head strong {
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .detail-head .detail-id {
+      font-family: var(--mono);
+      color: var(--text-dim);
+      word-break: break-all;
+    }
+
+    .detail-scroll {
+      overflow-x: auto;
+    }
+
+    .detail-table th {
+      background: transparent;
+    }
+
+    .detail-table th,
+    .detail-table td {
+      padding: 7px 12px;
+    }
+
+    .detail-table td.model-name {
+      font-family: var(--mono);
+      font-weight: 600;
+    }
+
+    .share-cell {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .share-track {
+      width: 90px;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--border-subtle);
+      overflow: hidden;
+    }
+
+    .share-fill {
+      height: 100%;
+      border-radius: 3px;
+      background: var(--accent);
+    }
+
+    .detail-empty {
+      color: var(--text-muted);
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+
     .title-cell {
       max-width: 440px;
       white-space: normal;
@@ -689,7 +796,7 @@
     <div id="warnings-banner" class="alert-box error-box" hidden></div>
 
     <div class="section-header">
-      <h2>Sessions</h2>
+      <h2>Sessions <span class="section-meta">· click a row for its per-model breakdown</span></h2>
       <span id="sessions-summary" class="section-meta">Showing 0 of 0 sessions</span>
     </div>
 
@@ -779,6 +886,7 @@
       let prevSessions = new Map();
       let prevTotals = null;
       let baselineTotals = null;
+      const expandedSessions = new Set(); // session keys with an open per-model breakdown
       let recentRowDiffs = new Map(); // key -> { until, isNew, dCost, dReq, dIn, dOut, dCR, dCW, dSub }
 
       // DOM elements
@@ -1201,6 +1309,124 @@
         tr.appendChild(td);
       }
 
+      function toggleSession(key) {
+        if (expandedSessions.has(key)) {
+          expandedSessions.delete(key);
+        } else {
+          expandedSessions.add(key);
+        }
+        render(false);
+      }
+
+      function buildDetailRow(s) {
+        const tr = document.createElement("tr");
+        tr.className = "detail-row";
+        const td = document.createElement("td");
+        td.colSpan = 10;
+        const panel = document.createElement("div");
+        panel.className = "detail-panel";
+
+        const models = Array.isArray(s.models) ? s.models : [];
+
+        const head = document.createElement("div");
+        head.className = "detail-head";
+        const heading = document.createElement("strong");
+        heading.textContent = "Per-model breakdown";
+        head.appendChild(heading);
+        const summary = document.createElement("span");
+        summary.textContent =
+          `${formatNumber(models.length)} model${models.length === 1 ? "" : "s"}` +
+          ((s.subagents || 0) > 0 ? ` · includes ${formatNumber(s.subagents)} subagent(s)` : "");
+        head.appendChild(summary);
+        const idSpan = document.createElement("span");
+        idSpan.className = "detail-id";
+        idSpan.textContent = `ID ${s.id}`;
+        head.appendChild(idSpan);
+        panel.appendChild(head);
+
+        if (models.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "detail-empty";
+          empty.textContent = "No model usage recorded for this session.";
+          panel.appendChild(empty);
+        } else {
+          const table = document.createElement("table");
+          table.className = "detail-table";
+          const thead = document.createElement("thead");
+          const headTr = document.createElement("tr");
+          const columns = [
+            ["Model", false],
+            ["Cost (USD)", true],
+            ["Cost share", true],
+            ["Tokens in", true],
+            ["Tokens out", true],
+            ["Cache reads", true],
+            ["Cache writes", true],
+            ["Requests", true],
+          ];
+          for (const [label, numeric] of columns) {
+            const th = document.createElement("th");
+            if (numeric) th.className = "num";
+            th.textContent = label;
+            headTr.appendChild(th);
+          }
+          thead.appendChild(headTr);
+          table.appendChild(thead);
+
+          const totalKnown = s.known_cost_usd || 0;
+          const tbody = document.createElement("tbody");
+          for (const m of models) {
+            const row = document.createElement("tr");
+            const nameTd = document.createElement("td");
+            nameTd.className = "model-name";
+            nameTd.textContent = sanitizeTitle(m.model);
+            row.appendChild(nameTd);
+
+            appendNumberCell(row, formatCost(m), null);
+
+            const shareTd = document.createElement("td");
+            shareTd.className = "num";
+            const unknownCost = (m.unpriced_requests || 0) > 0 && !(m.known_cost_usd > 0);
+            if (totalKnown > 0 && !unknownCost) {
+              const pct = Math.min(100, Math.max(0, ((m.known_cost_usd || 0) / totalKnown) * 100));
+              const wrap = document.createElement("span");
+              wrap.className = "share-cell";
+              const track = document.createElement("span");
+              track.className = "share-track";
+              const fill = document.createElement("span");
+              fill.className = "share-fill";
+              fill.style.display = "block";
+              fill.style.width = `${pct}%`;
+              track.appendChild(fill);
+              wrap.appendChild(track);
+              const label = document.createElement("span");
+              label.textContent = `${pct.toFixed(1)}%`;
+              wrap.appendChild(label);
+              shareTd.appendChild(wrap);
+            } else {
+              shareTd.textContent = "-";
+            }
+            row.appendChild(shareTd);
+
+            appendNumberCell(row, formatNumber(m.input), null);
+            appendNumberCell(row, formatNumber(m.output), null);
+            appendNumberCell(row, formatNumber(m.cache_read), null);
+            appendNumberCell(row, formatNumber(m.cache_write), null);
+            appendNumberCell(row, formatNumber(m.requests), null);
+            tbody.appendChild(row);
+          }
+          table.appendChild(tbody);
+          const scroll = document.createElement("div");
+          scroll.className = "detail-scroll";
+          scroll.appendChild(table);
+          panel.appendChild(scroll);
+        }
+
+        td.appendChild(panel);
+        tr.appendChild(td);
+        return tr;
+      }
+
       function renderSessionsTable(sessions) {
         sessionsTbody.innerHTML = "";
         if (sessions.length === 0) {
@@ -1222,10 +1448,30 @@
           const diff = recentRowDiffs.get(key);
           const isRecent = diff && diff.until > now;
 
+          const isExpanded = expandedSessions.has(key);
+
           const tr = document.createElement("tr");
+          tr.className = "session-row";
           if (isRecent) {
-            tr.className = "row-updated";
+            tr.classList.add("row-updated");
           }
+          if (isExpanded) {
+            tr.classList.add("expanded");
+          }
+          tr.tabIndex = 0;
+          tr.setAttribute("aria-expanded", String(isExpanded));
+          tr.addEventListener("click", () => {
+            // Selecting text (e.g. to copy a session ID) should not toggle the row.
+            const selection = window.getSelection();
+            if (selection && !selection.isCollapsed && tr.contains(selection.anchorNode)) return;
+            toggleSession(key);
+          });
+          tr.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              toggleSession(key);
+            }
+          });
 
           // Title cell
           const titleTd = document.createElement("td");
@@ -1238,6 +1484,11 @@
 
           const titleMain = document.createElement("div");
           titleMain.className = "title-main";
+          const chevron = document.createElement("span");
+          chevron.className = "chevron";
+          chevron.textContent = "▸";
+          chevron.setAttribute("aria-hidden", "true");
+          titleMain.appendChild(chevron);
           const titleSpan = document.createElement("span");
           titleSpan.textContent = displayTitle;
           titleMain.appendChild(titleSpan);
@@ -1311,6 +1562,9 @@
           );
 
           sessionsTbody.appendChild(tr);
+          if (isExpanded) {
+            sessionsTbody.appendChild(buildDetailRow(s));
+          }
         }
       }
 

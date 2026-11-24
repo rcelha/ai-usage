@@ -489,3 +489,76 @@ fn invalid_prices_fail_with_context_and_missing_data_is_empty() {
     );
     assert!(Pricing::load(Some(&file)).is_err());
 }
+
+#[test]
+fn session_breakdown_splits_usage_per_model_including_subagents() {
+    let (_tmp, p) = setup();
+    let mut other = claude_message("b", 40, 8);
+    other["message"]["model"] = json!("mystery-model");
+    jsonl(
+        &p.claude.join("projects/project/main.jsonl"),
+        &[
+            json!({"type":"custom-title","sessionId":"main","customTitle":"Mixed models"}),
+            claude_message("a", 10, 5),
+            other,
+        ],
+    );
+    jsonl(
+        &p.claude
+            .join("projects/project/main/subagents/agent-one.jsonl"),
+        &[claude_message("c", 20, 7)],
+    );
+    let report = collect(&p, &[], &prices());
+    let s = report.find_session("mixed").unwrap();
+    assert_eq!(s.id, "main");
+    assert_eq!(report.find_session("ma").unwrap().id, "main");
+    assert!(report.find_session("absent").is_err());
+
+    // Priced models come first; the subagent's usage joins its model's row.
+    let names: Vec<_> = s.models.iter().map(|m| m.model.as_str()).collect();
+    assert_eq!(names, ["claude-sonnet-5", "mystery-model"]);
+    let sonnet = &s.models[0].usage;
+    assert_eq!(sonnet.requests, 2);
+    assert_eq!(sonnet.tokens.input, 30);
+    assert_eq!(sonnet.tokens.output, 12);
+    assert!((sonnet.cost_usd.unwrap() - 0.00035).abs() < 1e-10);
+    let mystery = &s.models[1].usage;
+    assert_eq!(mystery.requests, 1);
+    assert_eq!(mystery.tokens.input, 40);
+    assert_eq!(mystery.cost_usd, None);
+    assert_eq!(s.usage.requests, 3);
+    assert_eq!(
+        s.usage.tokens.input,
+        s.models.iter().map(|m| m.usage.tokens.input).sum::<u64>()
+    );
+
+    let mut output = Vec::new();
+    display::write_session(&mut output, s).unwrap();
+    let text = String::from_utf8(output).unwrap();
+    assert!(text.contains("Mixed models"), "{text}");
+    assert!(text.contains("claude-sonnet-5"), "{text}");
+    assert!(text.contains("unknown"), "{text}");
+    assert!(text.contains("Total"), "{text}");
+
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_ai-usage"))
+            .args(args)
+            .arg("--claude-dir")
+            .arg(&p.claude)
+            .args(["--provider", "claude"])
+            .output()
+            .unwrap()
+    };
+    let output = run(&["--session", "main", "--json"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let v: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(v["id"], "main");
+    assert_eq!(v["models"][0]["model"], "claude-sonnet-5");
+    assert_eq!(v["models"][0]["requests"], 2);
+    assert_eq!(v["models"][1]["cost_usd"], Value::Null);
+    assert!(!run(&["--session", "absent"]).status.success());
+}

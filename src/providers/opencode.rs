@@ -88,7 +88,7 @@ fn message_usage(session: &mut Session, message: &Value, pricing: &Pricing) {
     let reported = message["cost"]
         .as_f64()
         .filter(|n| n.is_finite() && *n >= 0.0);
-    session.usage.record(
+    session.record(
         tokens,
         reported.or_else(|| pricing.estimate(model, tokens, 0)),
         reported.is_none(),

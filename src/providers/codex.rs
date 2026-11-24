@@ -248,9 +248,7 @@ fn rollout(
                 if tokens == Tokens::default() {
                     return;
                 }
-                session
-                    .usage
-                    .record(tokens, pricing.estimate(&model, tokens, 0), true, &model);
+                session.record(tokens, pricing.estimate(&model, tokens, 0), true, &model);
             }
             _ => {}
         }

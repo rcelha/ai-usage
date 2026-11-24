@@ -6,7 +6,7 @@ A Rust CLI that reads local **OpenCode**, **Claude Code (Anthropic)**, and **Cod
 cargo run --release -- --limit 20
 ```
 
-Each row shows the session title, provider, last use in UTC, USD cost, input tokens, output tokens, cache reads, cache writes, requests, and subagents. Here, “provider” identifies the coding tool. OpenCode can use several underlying model vendors.
+Each row shows the session title, session ID, provider, last use in UTC, USD cost, input tokens, output tokens, cache reads, cache writes, requests, and subagents. Here, “provider” identifies the coding tool. OpenCode can use several underlying model vendors.
 
 ## Usage
 
@@ -26,6 +26,10 @@ cargo run --release -- --json > usage.json
 # Read a backup or a nonstandard installation
 cargo run --release -- --provider codex --codex-dir /path/to/codex-home
 
+# Cost/token breakdown per model for one session (ID, ID prefix, or title text)
+cargo run --release -- --session 0199a2b4
+cargo run --release -- --session "fix login" --provider claude --json
+
 # Longer titles in the table
 cargo run --release -- --title-width 70
 
@@ -38,7 +42,9 @@ cargo run --release -- --serve 3000 --since 2026-11-01 --limit 20
 
 Build a standalone executable with `cargo build --release`, then run `./target/release/ai-usage`. Run `--help` for all options. The final table shows totals per provider: sessions, cost, tokens, cache usage, requests, and subagents. `--limit` limits displayed rows; overall and provider totals include **all matching sessions**. JSON includes the same breakdown in `provider_totals`.
 
-With `--serve [HOST:]PORT` (or `--port PORT`), `ai-usage` starts a local web server (default `127.0.0.1:8080`), watches the data directories for file and SQLite changes with a fallback poll, and streams live updates to the browser via Server-Sent Events (`/api/events` and `/api/report`) so costs, tokens, and session rows update automatically without refreshing.
+`--session <ID_OR_TITLE>` prints a single session's breakdown per model: cost, share of the session's cost, tokens, cache usage, and requests, with subagent usage attributed to the model that served it. The query is matched as an exact session ID, then a unique ID prefix, then a unique case-insensitive title fragment; an ambiguous query lists the candidates. Session IDs appear in the table's `Session ID` column, in `--json` output, and in the web report. Every session in the JSON report carries the same data in its `models` array.
+
+With `--serve [HOST:]PORT` (or `--port PORT`), `ai-usage` starts a local web server (default `127.0.0.1:8080`), watches the data directories for file and SQLite changes with a fallback poll, and streams live updates to the browser via Server-Sent Events (`/api/events` and `/api/report`) so costs, tokens, and session rows update automatically without refreshing. Click a session row to expand its per-model breakdown; expanded rows keep updating live.
 
 ## Data sources
 

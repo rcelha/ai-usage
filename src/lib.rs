@@ -123,6 +123,14 @@ impl Usage {
     }
 }
 
+/// Usage attributed to one model within a session, including its subagents.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ModelUsage {
+    pub model: String,
+    #[serde(flatten)]
+    pub usage: Usage,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Session {
     pub id: String,
@@ -132,6 +140,8 @@ pub struct Session {
     pub subagents: u64,
     #[serde(flatten)]
     pub usage: Usage,
+    /// Per-model breakdown of `usage`, highest known cost first.
+    pub models: Vec<ModelUsage>,
     #[serde(skip)]
     pub(crate) parent: Option<String>,
 }
@@ -144,8 +154,40 @@ impl Session {
             last_used: None,
             subagents: 0,
             usage: Usage::empty(),
+            models: Vec::new(),
             parent: None,
         }
+    }
+    fn model_usage(&mut self, model: &str) -> &mut Usage {
+        let i = match self.models.iter().position(|m| m.model == model) {
+            Some(i) => i,
+            None => {
+                self.models.push(ModelUsage {
+                    model: model.to_owned(),
+                    usage: Usage::empty(),
+                });
+                self.models.len() - 1
+            }
+        };
+        &mut self.models[i].usage
+    }
+    pub(crate) fn record(
+        &mut self,
+        tokens: Tokens,
+        cost: Option<f64>,
+        estimated: bool,
+        model: &str,
+    ) {
+        self.usage.record(tokens, cost, estimated, model);
+        self.model_usage(model)
+            .record(tokens, cost, estimated, model);
+    }
+    fn absorb(&mut self, other: &Session) {
+        self.usage.merge(&other.usage);
+        for m in &other.models {
+            self.model_usage(&m.model).merge(&m.usage);
+        }
+        self.touch(other.last_used);
     }
     pub(crate) fn touch(&mut self, time: Option<DateTime<Utc>>) {
         self.last_used = self.last_used.max(time);
@@ -210,6 +252,47 @@ impl Report {
         }
         matched
     }
+
+    /// Finds one session by exact ID, then unique ID prefix, then unique
+    /// case-insensitive title substring.
+    pub fn find_session(&self, query: &str) -> Result<&Session> {
+        let query = query.trim();
+        if query.is_empty() {
+            return Err(anyhow!("session query is empty"));
+        }
+        let lower = query.to_lowercase();
+        let tiers: [&dyn Fn(&Session) -> bool; 3] =
+            [&|s| s.id == query, &|s| s.id.starts_with(query), &|s| {
+                s.title.to_lowercase().contains(&lower)
+            }];
+        for matches in tiers {
+            let found: Vec<&Session> = self.sessions.iter().filter(|s| matches(s)).collect();
+            match found.as_slice() {
+                [] => continue,
+                [one] => return Ok(one),
+                many => {
+                    let mut message = format!(
+                        "'{query}' matches {} sessions; use a full ID or add --provider:",
+                        many.len()
+                    );
+                    for s in many.iter().take(10) {
+                        let title: String = s
+                            .title
+                            .chars()
+                            .map(|c| if c.is_control() { ' ' } else { c })
+                            .take(60)
+                            .collect();
+                        message.push_str(&format!("\n  {}  {}  {title}", s.id, s.provider));
+                    }
+                    if many.len() > 10 {
+                        message.push_str("\n  …");
+                    }
+                    return Err(anyhow!(message));
+                }
+            }
+        }
+        Err(anyhow!("no session matches '{query}'"))
+    }
 }
 
 pub fn collect(paths: &Paths, providers: &[Provider], pricing: &Pricing) -> Report {
@@ -229,6 +312,15 @@ pub fn collect(paths: &Paths, providers: &[Provider], pricing: &Pricing) -> Repo
         }
     }
     let mut sessions = roll_up(sessions, &mut warnings);
+    for session in &mut sessions {
+        session.models.sort_by(|a, b| {
+            b.usage
+                .known_cost_usd
+                .total_cmp(&a.usage.known_cost_usd)
+                .then_with(|| b.usage.requests.cmp(&a.usage.requests))
+                .then_with(|| a.model.cmp(&b.model))
+        });
+    }
     sessions.sort_by(|a, b| {
         b.last_used
             .cmp(&a.last_used)
@@ -273,10 +365,10 @@ fn roll_up(sessions: Vec<Session>, warnings: &mut Vec<String>) -> Vec<Session> {
             let mut s = sessions[root].clone();
             s.usage = Usage::empty();
             s.subagents = 0;
+            s.models.clear();
             s
         });
-        target.usage.merge(&session.usage);
-        target.touch(session.last_used);
+        target.absorb(session);
         if i != root {
             target.subagents += 1;
         }

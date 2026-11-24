@@ -117,7 +117,7 @@ pub(super) fn load(
             cost = cost.map(|c| c * 2.0);
         }
         if let Some(session) = sessions.get_mut(&id) {
-            session.usage.record(tokens, cost, true, model);
+            session.record(tokens, cost, true, model);
         }
     }
     // Empty metadata files aren't conversations.
